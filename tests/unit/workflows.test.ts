@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import { spawn as spawnProc, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -239,27 +241,46 @@ describe('macros', () => {
 });
 
 describe('triggers', () => {
-  it('fires on events, schedules and new files', async () => {
+  /** On CI, print state as an annotation if a trigger test stalls (raw CI logs aren't always readable). */
+  function watchdog(core: Core, label: string, extra: () => any = () => ({})) {
+    const t = setTimeout(() => {
+      if (!process.env.GITHUB_ACTIONS) return;
+      const runs = [...core.services.macros.runs.values()].map((r: any) => ({ macro: r.macro.name, state: r.state, error: r.error, trigger: r.trigger }));
+      const info = JSON.stringify({ runs, triggers: core.services.triggers.list().map((x: any) => ({ kind: x.kind, last: x.last_fired })), ...extra() });
+      process.stdout.write(`\n::warning title=${label} stalled::${info.replace(/%/g, '%25').replace(/\r?\n/g, '%0A')}\n`);
+    }, 8000);
+    cleanups.push(() => clearTimeout(t));
+  }
+
+  it('fires on matching events only', async () => {
     const { core } = setup();
+    watchdog(core, 'event trigger');
     await core.run('macros.save', { definition: { name: 'echo', steps: [{ op: 'output', name: 'got', value: '{{path | default:topic}}' }] } });
     await core.run('triggers.add', { macro: 'echo', kind: 'event', config: { topic: 'download.completed', where: 'event.path endsWith ".pdf"' } });
     const done = new Promise<any>((r) => core.events.once('macro.completed', (e) => r(e.data)));
     core.events.emit('download.completed', { path: '/tmp/a.txt' }); // filtered out
     core.events.emit('download.completed', { path: '/tmp/b.pdf' });
     expect((await done).outputs.got).toBe('/tmp/b.pdf');
+    await expect(core.run('triggers.add', { macro: 'echo', kind: 'event', config: { topic: 'macro.step' } })).rejects.toThrow(/can't trigger/);
+  }, 20000);
 
-    const sched = await core.run('triggers.add', { macro: 'echo', kind: 'schedule', config: { every: 60 } });
+  it('fires on schedule', async () => {
+    const { core } = setup();
+    await core.run('macros.save', { definition: { name: 'tick', steps: [] } });
+    const sched = await core.run('triggers.add', { macro: 'tick', kind: 'schedule', config: { every: 60 } });
     const fired = core.services.triggers.tick(Date.now());
     expect(fired).toContain(sched.id);
     expect(core.services.triggers.tick(Date.now() + 1000)).not.toContain(sched.id);
+  });
 
-    await expect(core.run('triggers.add', { macro: 'echo', kind: 'event', config: { topic: 'macro.step' } })).rejects.toThrow(/can't trigger/);
-
+  it('fires once per new file, queueing arrivals during a run', async () => {
+    const { core } = setup();
     const inbox = tempDir('inbox-');
     writeFileSync(join(inbox, 'already.csv'), 'old'); // present before the trigger: never fires
+    const files: string[] = [];
+    watchdog(core, 'file trigger', () => ({ inbox, listing: require('node:fs').readdirSync(inbox), files }));
     await core.run('macros.save', { definition: { name: 'slowfile', steps: [{ op: 'wait', ms: 150 }, { op: 'output', name: 'file', value: '{{name}}' }] } });
     await core.run('triggers.add', { macro: 'slowfile', kind: 'file', config: { dir: inbox, pattern: '*.csv', settleMs: 50, pollMs: 200 } });
-    const files: string[] = [];
     const allDone = new Promise<void>((r) => core.events.on('macro.completed', (e) => {
       if (e.data.macro !== 'slowfile') return;
       files.push(e.data.outputs.file);
@@ -481,5 +502,31 @@ describe('checkpoints', () => {
     expect(readFileSync(join(extra, 'config.json'), 'utf8')).toBe('{"a":1}');
     expect(existsSync(join(dir, 'core.db.before-restore'))).toBe(true);
     core.dispose();
+  });
+});
+
+describe('user scripts', () => {
+  it('run in a worker through the command bus, limited to their scopes', async () => {
+    const { core } = setup();
+    await core.run('scripts.save', {
+      name: 'count-tabs',
+      code: `// @name Count tabs\n// @scopes tabs:read, tabs:write\nmodule.exports = async (sensor, args) => {\n  await sensor.run('tabs.open', { url: 'https://example.com/' + args.n });\n  const tabs = await sensor.run('tabs.list');\n  console.log('tabs', tabs.length);\n  return { tabs: tabs.length };\n};\n`,
+    });
+    const list = await core.run('scripts.list');
+    expect(list.scripts[0]).toMatchObject({ name: 'count-tabs', title: 'Count tabs', scopes: ['tabs:read', 'tabs:write'] });
+    const r = await core.run('scripts.run', { name: 'count-tabs', args: { n: 7 } });
+    expect(r.result.tabs).toBeGreaterThanOrEqual(1);
+    expect(r.logs[0]).toMatch(/^tabs \d+/);
+    expect(core.workspaces.allTabs().some((t) => t.url === 'https://example.com/7')).toBe(true);
+
+    // beyond its declared scopes it is refused (no approval in tests)
+    await core.run('scripts.save', { name: 'sneaky', code: `// @scopes tabs:read\nmodule.exports = async (sensor) => sensor.run('history.clear');\n` });
+    await expect(core.run('scripts.run', { name: 'sneaky' })).rejects.toThrow(/lacks scope\(s\): history:write/);
+    // an API token needs scripts:exec, and passes on only what it has
+    await expect(core.bus.run('scripts.run', { name: 'count-tabs' }, token(['tabs:read', 'tabs:write']))).rejects.toThrow(/scripts:exec/);
+    await expect(core.bus.run('scripts.run', { name: 'count-tabs', args: { n: 1 } }, token(['scripts:exec', 'tabs:read']))).rejects.toThrow(/tabs:write/);
+    // runaway scripts are stopped
+    await core.run('scripts.save', { name: 'loop', code: `module.exports = () => new Promise(() => {});\n` });
+    await expect(core.run('scripts.run', { name: 'loop', timeout: 300 })).rejects.toThrow(/timed out/);
   });
 });

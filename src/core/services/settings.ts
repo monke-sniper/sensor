@@ -33,6 +33,7 @@ export const SETTING_DEFAULTS: Record<string, { value: unknown; description: str
   'orca.cliPath': { value: '', description: 'Path to the Orca CLI (found on PATH when empty)' },
   'ai.autoSubmit': { value: false, description: 'Press send after inserting text into AI sites (otherwise you review and send)' },
   'ai.adapters': { value: {}, description: 'Per-site selector overrides: {chatgpt: {input: [...], send: [...]}, ...}' },
+  'scripts.dir': { value: '', description: 'Folder for user scripts (default: <data>/scripts)' },
   'terminals.defaultCwd': { value: '', description: 'Starting folder for new terminals (home when empty)' },
   'shortcuts.overrides': { value: {}, description: 'Command id -> accelerator overrides' },
 };

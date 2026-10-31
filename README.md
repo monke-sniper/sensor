@@ -69,7 +69,7 @@ The default CLI token cannot do admin or destructive things: create tokens, dele
 | AI website workflows: send text/files to ChatGPT, Claude, Perplexity, Gemini or any chat site you're logged in to; read and wait for answers; ask several at once; save conversations to notes; prompt templates | implemented | Pressing send is a separate permission (`forms:submit`), off by default. Site selectors can be overridden in settings when sites change |
 | Checkpoints: two rolling slots, verified, staged restore | implemented | Point `backup.dir` at a synced folder for an off-machine copy |
 | Sync between machines | planned | Only the synced-folder checkpoint approach above for now |
-| User scripting (`scripts:exec`) | planned | The scope exists; only task validation commands run today |
+| User scripts | implemented | JavaScript files in `<data>/scripts` run in a worker thread and call Sensor commands through `sensor.run()`, limited to their `// @scopes` header. Running them needs `scripts:exec`. See [docs/macros.md](docs/macros.md#scripts) |
 | Themes | partial | Custom CSS setting |
 | Code signing, auto-update | planned | CI builds are unsigned |
 | Performance benchmarks | implemented | `npm run bench`; results in [docs/benchmarks.md](docs/benchmarks.md). Live CPU/RAM/process metrics in the status bar |

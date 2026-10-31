@@ -107,3 +107,30 @@ sensor triggers add "Import CSV" file --config '{"dir": "C:\\Users\\me\\Inbox", 
 ## Resume
 
 When a run fails after a `checkpoint`, **Resume** (or `sensor macros resume <run>`) restarts it right after the checkpoint, with the saved variables. You can pass extra inputs, which you'll need for secrets, since those are never stored.
+
+## Scripts
+
+Use a script when a macro gets too complicated. Scripts are JavaScript files in `<data>/scripts` (or the `scripts.dir` setting):
+
+```js
+// @name Tidy downloads
+// @description Move finished PDFs from Downloads into a Papers folder
+// @scopes downloads:read, files:write
+module.exports = async (sensor, args) => {
+  const list = await sensor.run('downloads.list');
+  let moved = 0;
+  for (const d of list) {
+    if (d.state === 'completed' && d.path?.endsWith('.pdf')) {
+      await sensor.run('files.move', { paths: [d.path], dest: args.dest });
+      moved++;
+    }
+  }
+  console.log(`moved ${moved}`);
+  return { moved };
+};
+```
+
+- Run with `sensor scripts run "tidy-downloads" --args '{"dest":"C:\\Papers"}'`, or from a macro with `{ "op": "command", "command": "scripts.run", "args": { "name": "tidy-downloads" } }`.
+- Each run gets a fresh worker thread and a timeout. Console output is returned with the result.
+- `sensor.run` goes through the command bus as `script:<name>`, so it is limited to the `@scopes` header (and to the caller's scopes).
+- The worker itself is ordinary Node.js. Treat scripts like shell scripts: only run code you trust. That is why running one needs `scripts:exec`, which the default CLI token doesn't have.

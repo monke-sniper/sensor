@@ -48,7 +48,8 @@ export type Scope = keyof typeof SCOPES | '*';
 export type Principal =
   | { kind: 'user' }
   | { kind: 'token'; id: string; name: string; scopes: Scope[] }
-  | { kind: 'macro'; id: string; name: string; scopes: Scope[] };
+  | { kind: 'macro'; id: string; name: string; scopes: Scope[] }
+  | { kind: 'script'; id: string; name: string; scopes: Scope[] };
 
 export function principalLabel(p: Principal): string {
   return p.kind === 'user' ? 'user' : `${p.kind}:${p.name}`;

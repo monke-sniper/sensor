@@ -65,6 +65,6 @@ Common topics:
 | `forms:submit` | pressing send/submit on websites (AI sites included) |
 | `files:delete` | deleting files (to the recycle bin) |
 | `git:destructive` | writing to protected branches, removing worktrees |
-| `scripts:exec` | running shell commands (task validation) |
+| `scripts:exec` | running user scripts and shell commands (task validation) |
 | `backup:write` | creating and restoring checkpoints |
 | `auth:admin` | managing tokens |

@@ -9,7 +9,8 @@ import { macrosModule } from './services/macros';
 import { devModule } from './services/dev';
 import { aiModule } from './services/ai';
 import { backupModule } from './services/backup';
+import { scriptsModule } from './services/scripts';
 
 export function allModules(opts: { indexerWorker?: string | null } = {}): CoreModule[] {
-  return [notesModule, filesModule(opts.indexerWorker ?? null), annotationsModule, clipboardModule, recognizerModule, rssModule, documentsModule, macrosModule(), devModule, aiModule, backupModule()];
+  return [notesModule, filesModule(opts.indexerWorker ?? null), annotationsModule, clipboardModule, recognizerModule, rssModule, documentsModule, macrosModule(), devModule, aiModule, backupModule(), scriptsModule()];
 }
