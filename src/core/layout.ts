@@ -19,7 +19,9 @@ export type ToolKind =
   | 'notifications'
   | 'annotations'
   | 'documents'
-  | 'providers';
+  | 'providers'
+  | 'ai'
+  | 'backups';
 
 export type Panel =
   | { kind: 'browser' } // shows the workspace's active tab

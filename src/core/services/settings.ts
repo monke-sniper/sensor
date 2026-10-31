@@ -26,7 +26,14 @@ export const SETTING_DEFAULTS: Record<string, { value: unknown; description: str
   'theme.name': { value: 'sensor-dark', description: 'Theme name' },
   'theme.customCss': { value: '', description: 'User CSS appended to the shell' },
   'backup.intervalHours': { value: 6, description: 'Automatic checkpoint interval (0 = off)' },
+  'backup.dir': { value: '', description: 'Checkpoint folder (default: <data>/checkpoints). A cloud-synced folder gives you an off-machine copy.' },
+  'backup.include': { value: [], description: 'Extra folders copied into each checkpoint' },
   'agents.default': { value: 'claude', description: 'Default coding agent adapter' },
+  'agents.custom': { value: [], description: 'Custom agents: [{id, name, cmd, args?, prompt: "arg"|"type"|"none"}]' },
+  'orca.cliPath': { value: '', description: 'Path to the Orca CLI (found on PATH when empty)' },
+  'ai.autoSubmit': { value: false, description: 'Press send after inserting text into AI sites (otherwise you review and send)' },
+  'ai.adapters': { value: {}, description: 'Per-site selector overrides: {chatgpt: {input: [...], send: [...]}, ...}' },
+  'terminals.defaultCwd': { value: '', description: 'Starting folder for new terminals (home when empty)' },
   'shortcuts.overrides': { value: {}, description: 'Command id -> accelerator overrides' },
 };
 

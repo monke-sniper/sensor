@@ -7,6 +7,7 @@ import { Db, now, uid } from './db';
 import { EventBus } from './events';
 import { nullBrowserHost, type BrowserHost, type PlatformHost, type TerminalHost } from './host';
 import { AuditLog, SCOPES, TokenStore, type Scope } from './permissions';
+import { applyPendingRestore } from './services/backup';
 import { BrowserData, browserDataCommands } from './services/browserdata';
 import { Resources, resourceCommands } from './services/resources';
 import { Search, registerCoreSearchSources, searchCommands } from './services/search';
@@ -51,6 +52,7 @@ export class Core {
   constructor(opts: CoreOptions) {
     this.dataDir = opts.dataDir;
     mkdirSync(opts.dataDir, { recursive: true });
+    applyPendingRestore(opts.dataDir); // a staged checkpoint restore swaps in before the DB opens
     this.db = new Db(join(opts.dataDir, 'core.db'));
     this.audit = new AuditLog(this.db);
     this.tokens = new TokenStore(this.db);

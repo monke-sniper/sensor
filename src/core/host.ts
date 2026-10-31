@@ -48,7 +48,9 @@ export interface PlatformHost {
 }
 
 export interface TerminalHost {
-  spawn(opts: { id: string; cwd: string; cmd?: string; args?: string[]; env?: Record<string, string>; cols?: number; rows?: number }): void;
+  spawn(opts: { id: string; cwd: string; cmd?: string; args?: string[]; env?: Record<string, string>; cols?: number; rows?: number; title?: string; meta?: Record<string, any> }): void;
+  /** Recent output (raw, with ANSI) and exit state, or null if unknown. */
+  output(id: string): { buffer: string; exited: boolean; exitCode: number | null; pid?: number } | null;
   write(id: string, data: string): void;
   resize(id: string, cols: number, rows: number): void;
   kill(id: string): void;

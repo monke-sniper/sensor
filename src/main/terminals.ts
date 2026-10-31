@@ -6,6 +6,7 @@ import type { Core, CoreModule } from '../core/core';
 import type { CommandDef } from '../core/commands';
 import type { TerminalHost } from '../core/host';
 import { uid } from '../core/db';
+import { stripAnsi } from '../core/proc';
 import type { MainRefs } from './modules';
 
 interface Term {
@@ -84,6 +85,11 @@ export class Terminals implements TerminalHost {
     t.pty.write(data);
   }
 
+  output(id: string) {
+    const t = this.terms.get(id);
+    return t ? { buffer: t.buffer, exited: t.exited, exitCode: t.exitCode, pid: t.pty?.pid } : null;
+  }
+
   resize(id: string, cols: number, rows: number): void {
     const t = this.terms.get(id);
     if (t && !t.exited) t.pty.resize(Math.max(2, cols | 0), Math.max(2, rows | 0));
@@ -106,10 +112,7 @@ export class Terminals implements TerminalHost {
   }
 }
 
-/** Strip ANSI escape sequences for API consumers. */
-export function stripAnsi(s: string): string {
-  return s.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(\u0007|\u001b\\)|\u001b[()][A-Z0-9]|\u001b[=>]/g, '');
-}
+export { stripAnsi };
 
 export function terminalsModule(refs: () => MainRefs): CoreModule {
   let T: Terminals;
@@ -157,7 +160,7 @@ function terminalCommands(core: Core, T: Terminals): CommandDef[] {
       },
       handler: (a) => {
         const id = uid('term_');
-        const cwd = a.cwd ?? core.settings.get<string>('terminals.defaultCwd') ?? homedir();
+        const cwd = a.cwd ?? (core.settings.get<string>('terminals.defaultCwd') || homedir());
         T.spawn({ id, cwd, cmd: a.cmd, args: a.args, title: a.title });
         let leaf: string | undefined;
         if (a.panel) leaf = core.workspaces.openPanel({ panel: { kind: 'tool', tool: 'terminal', state: { id } }, side: a.side, size: 0.35 });

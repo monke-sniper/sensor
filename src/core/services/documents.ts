@@ -1,6 +1,7 @@
 // Document toolkit: PDF operations (pdf-lib) and a converter registry that only
 // advertises conversions whose tool is actually available.
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { which } from '../proc';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';
@@ -92,12 +93,6 @@ const AV_OUT = ['mp4', 'webm', 'mkv', 'mov', 'mp3', 'wav', 'ogg', 'flac', 'm4a',
 const PANDOC_IN = ['md', 'markdown', 'html', 'htm', 'docx', 'odt', 'epub', 'rtf', 'rst', 'tex', 'org'];
 const PANDOC_OUT = ['md', 'html', 'docx', 'odt', 'epub', 'rtf', 'rst', 'tex', 'org', 'txt'];
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', avif: 'image/avif', svg: 'image/svg+xml', ico: 'image/x-icon' };
-
-function which(cmd: string): string | null {
-  const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', [cmd], { encoding: 'utf8' });
-  if (r.status !== 0) return null;
-  return r.stdout.split(/\r?\n/)[0]?.trim() || null;
-}
 
 export class Documents {
   private toolCache = new Map<string, string | null>();

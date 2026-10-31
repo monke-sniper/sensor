@@ -1,5 +1,5 @@
 import type { Core } from '../core';
-import type { CommandDef } from '../commands';
+import { CommandError, type CommandDef } from '../commands';
 import { now, uid } from '../db';
 import {
   defaultLayout,
@@ -319,6 +319,15 @@ export class Workspaces {
   }
 }
 
+function selectorList(a: { selector?: string; selectors?: string[] }): string[] {
+  const list = [...(a.selectors ?? []), ...(a.selector ? [a.selector] : [])].filter(Boolean);
+  if (!list.length) throw new CommandError('invalid_params', 'selector or selectors is required');
+  return list;
+}
+
+/** waitFor installs window.__sensor in the page's main world; these snippets reuse it. */
+const PAGE_FIND = `((fn, sels) => { const f = window.__sensor && window.__sensor.find(sels); return f ? fn(f.el) : false; })`;
+
 export function workspaceCommands(core: Core): CommandDef[] {
   const W = () => core.workspaces;
   const tabView = (t: Tab) => ({ ...t, incognito: isIncognito(t.profileId) });
@@ -536,13 +545,102 @@ export function workspaceCommands(core: Core): CommandDef[] {
     },
     {
       id: 'page.click', title: 'Click Element', scopes: ['page:interact'], palette: false,
-      params: { selector: { type: 'string', required: true, positional: 0 }, id: { type: 'string' } },
-      handler: async (a) => core.browser.click(a.id ?? activeTabOrThrow(core).id, [a.selector]),
+      description: 'Click the first visible element matching any selector (css, text=, role=…[name=], xpath=). Waits for it first.',
+      params: { selector: { type: 'string', positional: 0 }, selectors: { type: 'array' }, id: { type: 'string' }, timeout: { type: 'number', default: 10000 } },
+      handler: async (a) => {
+        const id = a.id ?? activeTabOrThrow(core).id;
+        const sels = selectorList(a);
+        const found = await core.browser.waitFor(id, sels, a.timeout);
+        await core.browser.click(id, [found, ...sels.filter((s) => s !== found)]);
+        return { ok: true, selector: found };
+      },
     },
     {
       id: 'page.type', title: 'Type Into Element', scopes: ['page:interact'], palette: false,
-      params: { selector: { type: 'string', required: true, positional: 0 }, text: { type: 'string', required: true, positional: 1 }, id: { type: 'string' } },
-      handler: async (a) => core.browser.type(a.id ?? activeTabOrThrow(core).id, [a.selector], a.text),
+      params: {
+        selector: { type: 'string', positional: 0 }, text: { type: 'string', required: true, positional: 1 }, selectors: { type: 'array' },
+        clear: { type: 'boolean', default: false }, id: { type: 'string' }, timeout: { type: 'number', default: 10000 },
+      },
+      handler: async (a) => {
+        const id = a.id ?? activeTabOrThrow(core).id;
+        const sels = selectorList(a);
+        const found = await core.browser.waitFor(id, sels, a.timeout);
+        await core.browser.type(id, [found, ...sels.filter((s) => s !== found)], a.text, { clear: a.clear });
+        return { ok: true, selector: found };
+      },
+    },
+    {
+      id: 'page.press', title: 'Press Key In Page', scopes: ['page:interact'], palette: false,
+      params: { key: { type: 'string', required: true, positional: 0, description: 'e.g. Enter, Escape, Control+A' }, id: { type: 'string' } },
+      handler: async (a) => {
+        await core.browser.press(a.id ?? activeTabOrThrow(core).id, a.key);
+        return { ok: true };
+      },
+    },
+    {
+      id: 'page.waitFor', title: 'Wait For Element', scopes: ['page:read'], palette: false,
+      params: { selector: { type: 'string', positional: 0 }, selectors: { type: 'array' }, id: { type: 'string' }, timeout: { type: 'number', default: 10000 } },
+      handler: async (a) => ({ selector: await core.browser.waitFor(a.id ?? activeTabOrThrow(core).id, selectorList(a), a.timeout) }),
+    },
+    {
+      id: 'page.select', title: 'Choose Option', scopes: ['page:interact'], palette: false,
+      params: { selector: { type: 'string', positional: 0 }, value: { type: 'string', required: true, positional: 1 }, selectors: { type: 'array' }, id: { type: 'string' }, timeout: { type: 'number', default: 10000 } },
+      handler: async (a) => {
+        const id = a.id ?? activeTabOrThrow(core).id;
+        const found = await core.browser.waitFor(id, selectorList(a), a.timeout);
+        const ok = await core.browser.exec(id, `${PAGE_FIND}((el) => {
+          const v = ${JSON.stringify(a.value)};
+          const opt = Array.from(el.options || []).find((o) => o.value === v || o.text.trim() === v);
+          if (!opt) return false;
+          el.value = opt.value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }, ${JSON.stringify([found])})`);
+        if (!ok) throw new Error(`option not found: ${a.value}`);
+        return { ok: true, selector: found };
+      },
+    },
+    {
+      id: 'page.extract', title: 'Extract From Page', scopes: ['page:read'], palette: false,
+      description: 'Read text, an attribute, or markdown from matching elements.',
+      params: {
+        selector: { type: 'string', positional: 0 }, selectors: { type: 'array' }, id: { type: 'string' },
+        attr: { type: 'string', description: 'attribute name; omit for text' },
+        format: { type: 'string', enum: ['text', 'markdown', 'html'], default: 'text' },
+        all: { type: 'boolean', default: false },
+        timeout: { type: 'number', default: 10000 },
+      },
+      handler: async (a) => {
+        const id = a.id ?? activeTabOrThrow(core).id;
+        const sels = selectorList(a);
+        const found = await core.browser.waitFor(id, sels, a.timeout);
+        const values = await core.browser.exec(id, `((() => {
+          const sel = ${JSON.stringify(found)};
+          const S = window.__sensor;
+          let els;
+          if (/^(text=|role=|xpath=)/.test(sel)) { const one = S.findOne(sel); els = one ? [one] : []; }
+          else els = Array.from(document.querySelectorAll(sel)).filter(S.visible);
+          if (!${!!a.all}) els = els.slice(0, 1);
+          return els.map((el) => {
+            ${a.attr ? `return el.getAttribute(${JSON.stringify(a.attr)});` : ''}
+            if (${JSON.stringify(a.format)} === 'html') return el.outerHTML;
+            if (${JSON.stringify(a.format)} === 'markdown') return S.md(el);
+            return (el.innerText ?? el.textContent ?? el.value ?? '').trim();
+          });
+        })())`);
+        return { selector: found, value: a.all ? values : values[0] ?? null };
+      },
+    },
+    {
+      id: 'page.upload', title: 'Attach Files To Page', scopes: ['page:interact', 'files:read'], palette: false,
+      params: { files: { type: 'array', required: true, positional: 0 }, selector: { type: 'string', default: 'input[type=file]' }, id: { type: 'string' } },
+      handler: async (a) => {
+        const { existsSync } = await import('node:fs');
+        for (const f of a.files) if (!existsSync(f)) throw new Error(`file not found: ${f}`);
+        await core.browser.setFiles(a.id ?? activeTabOrThrow(core).id, a.selector, a.files);
+        return { ok: true, files: a.files.length };
+      },
     },
     {
       id: 'page.screenshot', title: 'Screenshot Page', scopes: ['page:read'], palette: false,
