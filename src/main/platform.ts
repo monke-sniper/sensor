@@ -1,4 +1,5 @@
-import { Notification, clipboard, nativeImage, net, shell } from 'electron';
+import * as electron from 'electron';
+import { Notification, clipboard, net, shell } from 'electron';
 import type { PlatformHost } from '../core/host';
 
 export function electronPlatformHost(): PlatformHost {
@@ -16,7 +17,10 @@ export function electronPlatformHost(): PlatformHost {
       return { status: r.status, text: await r.text(), contentType: r.headers.get('content-type') ?? '' };
     },
     clipboardWriteText: (t) => clipboard.writeText(t),
-    clipboardWriteImage: (png) => (clipboard as any).writeImage(nativeImage.createFromBuffer(png)),
+    clipboardWriteImage: (png) => {
+      const Item = (electron as any).ClipboardItem;
+      if (Item) clipboard.write([new Item({ 'image/png': new Blob([new Uint8Array(png)], { type: 'image/png' }) })]);
+    },
     osNotify(title, body) {
       if (Notification.isSupported()) new Notification({ title, body, silent: true }).show();
     },

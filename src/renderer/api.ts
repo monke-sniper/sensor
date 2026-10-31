@@ -6,6 +6,7 @@ export interface SensorBridge {
   setOverlay(open: boolean): void;
   on(channel: 'event' | 'metrics' | 'ui' | 'overlay' | 'terminal', fn: (p: any) => void): () => void;
   send(channel: string, payload: unknown): void;
+  pathForFile(f: File): string;
 }
 
 export interface Tab {

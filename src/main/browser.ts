@@ -36,6 +36,8 @@ export class ElectronBrowserHost implements BrowserHost {
   private visible = new Set<string>();
   win: BrowserWindow | null = null;
   overlayOnTop: (() => void) | null = null;
+  /** Receives every layout pass, so native (non-web) panels like Obsidian can follow their placeholders. */
+  nativeLayout: ((rects: ViewRect[]) => void) | null = null;
   private suspendTimer: NodeJS.Timeout;
 
   constructor(private core: Core, private preloadPath: string, private hooks: BrowserHooks) {
@@ -227,6 +229,7 @@ export class ElectronBrowserHost implements BrowserHost {
       l.lastVisible = Date.now();
     }
     this.overlayOnTop?.();
+    this.nativeLayout?.(rects.filter((r) => r.tabId.startsWith('native:')));
   }
 
   /** Move a tab's view into another window (floating panel). */

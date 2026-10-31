@@ -165,7 +165,24 @@ export class Db {
     return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
   }
 
+  private depth = 0;
+
+  /** Transaction; nested calls become savepoints. */
   tx<T>(fn: () => T): T {
+    if (this.raw.isTransaction) {
+      const sp = `sp${++this.depth}`;
+      this.raw.exec(`SAVEPOINT ${sp}`);
+      try {
+        const out = fn();
+        this.raw.exec(`RELEASE ${sp}`);
+        return out;
+      } catch (e) {
+        this.raw.exec(`ROLLBACK TO ${sp}; RELEASE ${sp}`);
+        throw e;
+      } finally {
+        this.depth--;
+      }
+    }
     this.raw.exec('BEGIN');
     try {
       const out = fn();

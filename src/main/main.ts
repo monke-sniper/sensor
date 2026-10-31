@@ -56,8 +56,15 @@ function rebuildShortcuts(): void {
   shortcuts.set(map);
 }
 
-function handleShortcut(input: KeyInput, _wc: WebContents): boolean {
+let shellFocusContext = 'none';
+
+function handleShortcut(input: KeyInput, wc: WebContents): boolean {
   if (input.type !== 'keyDown') return false;
+  // A focused terminal gets the keyboard, except Ctrl+Shift chords, Alt+arrows and F-keys.
+  if (shellFocusContext === 'terminal' && win && wc === win.webContents) {
+    const passthrough = (input.control && input.shift) || (input.alt && /^Arrow/.test(input.key)) || /^F\d+$/.test(input.key);
+    if (!passthrough) return false;
+  }
   // Ctrl+1..9 -> tab by index
   if ((process.platform === 'darwin' ? input.meta : input.control) && !input.alt && !input.shift && /^Digit[1-9]$/.test(input.code ?? '')) {
     core.run('tabs.activateIndex', { index: Number(input.code!.slice(5)) - 1 }).catch(() => {});
@@ -87,6 +94,7 @@ function setOverlay(open: boolean): void {
     win.webContents.focus();
   }
   sendToShell('sensor:overlay', { open });
+  core.events.emit('ui.overlay', { open });
 }
 
 function setupSession(ses: Session, profileId: string): void {
@@ -451,7 +459,7 @@ async function boot(): Promise<void> {
   browserHost.sessionFor('default');
 
   core.bus.registerAll(mainCommands());
-  for (const m of allModules()) core.use(m);
+  for (const m of allModules({ indexerWorker: join(__dirname, 'indexer-worker.js') })) core.use(m);
   for (const m of mainModules(() => ({ win, browserHost, overlay }))) core.use(m);
   rebuildShortcuts();
 
@@ -489,6 +497,7 @@ async function boot(): Promise<void> {
     if (win && !win.isDestroyed()) browserHost.layout(win, rects);
   });
   ipcMain.on('sensor:overlay', (_e, open: boolean) => setOverlay(!!open));
+  ipcMain.on('sensor:focus-context', (_e, ctx: string) => (shellFocusContext = String(ctx)));
 
   await createWindow();
 

@@ -7,7 +7,7 @@ import { now } from '../db';
 
 export type ResourceKind =
   | 'tab' | 'file' | 'note' | 'command' | 'macro' | 'workspace' | 'annotation' | 'feeditem'
-  | 'project' | 'task' | 'download' | 'youtube' | 'chat' | 'web' | 'tag' | 'unknown';
+  | 'project' | 'task' | 'download' | 'youtube' | 'chat' | 'web' | 'tag' | 'clip' | 'unknown';
 
 export interface ParsedUri {
   kind: ResourceKind;
@@ -134,6 +134,8 @@ export class Resources {
       }
       case 'project':
         return { command: 'projects.open', args: { id: p.id } };
+      case 'clip':
+        return { command: 'clipboard.copy', args: { id: Number(p.id) } };
       default:
         throw new Error(`don't know how to open ${uri}`);
     }

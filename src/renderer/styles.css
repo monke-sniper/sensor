@@ -138,3 +138,26 @@ table.proc td { padding: 2px 4px; border-bottom: 1px solid var(--line); }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
+.setup { display: grid; gap: 6px; padding: 8px; color: var(--dim); }
+.row.selected { background: #14262a; border-color: var(--accent2); }
+.crumbs { display: flex; align-items: center; gap: 4px; font: 11px var(--mono); color: var(--dim); padding: 2px 4px; }
+.glyph { color: var(--mute); width: 10px; }
+.note-view { display: flex; flex-direction: column; gap: 4px; }
+.md { padding: 4px 10px 20px; line-height: 1.55; font-size: 13px; color: var(--text); user-select: text; }
+.md h1, .md h2, .md h3 { color: #e6edf3; margin: 14px 0 6px; } .md h1 { font-size: 18px; } .md h2 { font-size: 15px; }
+.md a { color: var(--accent); } .md code { font-family: var(--mono); background: var(--bg2); padding: 0 3px; border-radius: 3px; }
+.md pre { background: var(--bg2); padding: 8px; border-radius: 4px; overflow: auto; } .md blockquote { border-left: 3px solid var(--line2); margin: 6px 0; padding-left: 10px; color: var(--dim); }
+.md img { max-width: 100%; }
+.note-edit { min-height: 60vh; font-family: var(--mono); font-size: 12px; margin: 0 6px; }
+.small-note { font-size: 10px; padding: 0 4px; }
+.clip-img { max-width: 120px; max-height: 70px; border-radius: 3px; border: 1px solid var(--line); }
+.pre-1 { white-space: nowrap; }
+h3.sub { font: 600 10px var(--mono); color: var(--mute); letter-spacing: .12em; text-transform: uppercase; margin: 14px 4px 6px; }
+.documents textarea, .documents input { width: 100%; margin-bottom: 4px; }
+.result { background: var(--bg2); padding: 8px; border-radius: 4px; font: 11px var(--mono); white-space: pre-wrap; user-select: text; }
+.error-text { color: var(--err); padding: 4px; }
+.obsidian-panel { display: flex; flex-direction: column; height: 100%; }
+.obsidian-panel .view-host.native { flex: 1; background: transparent; }
+.terminal-tool { display: flex; flex-direction: column; height: 100%; background: var(--bg); }
+.xterm-host { flex: 1; min-height: 0; padding: 4px 0 0 6px; }
+.tool-panel .panel-body:has(.terminal-tool), .tool-panel .panel-body:has(.obsidian-panel) { overflow: hidden; }

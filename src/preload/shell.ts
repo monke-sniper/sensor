@@ -1,6 +1,6 @@
 // Preload for Sensor's own UI (shell + overlay). Exposes a narrow API; the
 // renderer never gets Node access.
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 type Listener = (payload: any) => void;
 
@@ -19,8 +19,9 @@ const api = {
     ipcRenderer.on(ch, h);
     return () => ipcRenderer.removeListener(ch, h);
   },
+  pathForFile: (f: File) => webUtils.getPathForFile(f),
   send: (channel: string, payload: unknown) => {
-    if (!/^sensor:(terminal-input|terminal-resize)$/.test(channel)) return;
+    if (!/^sensor:(terminal-input|terminal-resize|focus-context)$/.test(channel)) return;
     ipcRenderer.send(channel, payload);
   },
 };
