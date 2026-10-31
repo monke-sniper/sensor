@@ -2,7 +2,7 @@
 
 An integrated computer and internet environment for Windows 11. Sensor combines a Chromium browser, an agentic development environment, your real Obsidian app, files, documents, automation and AI-website workflows in one application. All of it can be driven from a first-class CLI and a local API.
 
-> **Status: working foundation, pre-release.** Sensor builds, runs and is tested end to end on Linux (unit tests plus a full Electron E2E suite). CI also runs on Windows, and Windows-only parts are marked below. Expect rough edges.
+> **Status: working foundation, pre-release.** Sensor builds, runs and passes its unit tests and full Electron E2E suite on Linux and Windows in CI. A few Windows-only integrations are not covered by automated tests yet; they are marked below. Expect rough edges.
 
 ## Quick start
 
@@ -38,7 +38,7 @@ The default CLI token cannot do admin or destructive things: create tokens, dele
 
 ## Feature status
 
-**implemented** = works and is covered by tests · **implemented (Windows, untested)** = written against the Win32 APIs, runs only on Windows, not yet verified there · **partial** = useful but incomplete · **planned** = not built
+**implemented** = works and is covered by tests · **implemented (Windows, untested)** = written against the Win32 APIs, runs only on Windows, not covered by automated tests yet · **partial** = useful but incomplete · **planned** = not built
 
 | Area | Status | Notes |
 |---|---|---|
@@ -46,7 +46,7 @@ The default CLI token cannot do admin or destructive things: create tokens, dele
 | Browser: tabs, profiles (separate cookies), incognito (in-memory, nothing recorded), history, bookmarks, downloads, find, zoom, devtools, tab suspension | implemented | Chromium via Electron 45 |
 | Browser extensions | partial | Unpacked extensions load per profile; no Chrome Web Store install |
 | Command registry, events, permissions, audit log | implemented | 300+ commands; GUI, CLI, API, shortcuts and macros all use the same commands |
-| Local API (JSON-RPC over pipe/socket) and Go CLI | implemented | Named pipe on Windows is exercised in Windows CI |
+| Local API (JSON-RPC over pipe/socket) and Go CLI | implemented | Named pipe + `sensor.exe` verified by the Windows E2E run |
 | Universal search (tabs, history, bookmarks, notes, files, feeds, clipboard, commands, macros, projects) | implemented | SQLite FTS5 |
 | Obsidian: vault notes, captures (page / selection / link / YouTube timestamp), backlinks, open in Obsidian | implemented | Sensor writes plain markdown into your vault |
 | Obsidian window docked inside a Sensor panel | implemented (Windows, untested) | Re-parents the real Obsidian window (Win32 `SetParent`); elsewhere Obsidian opens alongside |
@@ -58,7 +58,7 @@ The default CLI token cannot do admin or destructive things: create tokens, dele
 | Clipboard history (text, links, images), pinning, incognito exclusion | implemented | Skipping password-manager copies uses Windows clipboard flags (Windows, untested) |
 | RSS/Atom reader with discovery, collections | implemented | |
 | Deterministic page recognition (YouTube, AI chats, GitHub, Docs, PDFs, articles) and context actions | implemented | Rule-based, no AI |
-| Terminals | implemented | node-pty (ConPTY on Windows) + xterm.js |
+| Terminals | implemented | node-pty (ConPTY on Windows, verified in Windows E2E) + xterm.js |
 | Macro recorder and workflow engine | implemented | Records trusted clicks and typing with fallback selectors; steps, conditions, loops, variables, retries, error jumps, input prompts, nested macros, checkpoint resume. See [docs/macros.md](docs/macros.md) |
 | Triggers: schedule, events (e.g. `download.completed`), new files in a folder, startup | implemented | Loop guards built in |
 | Dev environment: projects, git status/diff/log, worktrees, protected branches | implemented | Merges, pushes or commits to protected branches need `git:destructive` (prompts) |

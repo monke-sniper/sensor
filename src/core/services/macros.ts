@@ -790,7 +790,8 @@ export class Triggers {
   start(): void {
     for (const t of this.list()) {
       if (!t.enabled) continue;
-      this.arm(t);
+      // triggers added before start() are already live; re-arming would reset their state
+      if (!this.armed(t.id)) this.arm(t);
       if (t.kind === 'startup') this.fire(t, {});
     }
     this.timer = setInterval(() => this.tick(Date.now()), 30_000);
@@ -842,6 +843,10 @@ export class Triggers {
       this.core.notify('error', 'Trigger failed', String(e?.message ?? e), 'macros');
       return null;
     }
+  }
+
+  private armed(id: string): boolean {
+    return this.unsubs.has(id) || this.watchers.has(id) || this.polls.has(id);
   }
 
   private drain(t: TriggerRow) {

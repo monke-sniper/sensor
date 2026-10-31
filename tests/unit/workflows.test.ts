@@ -288,6 +288,7 @@ describe('triggers', () => {
     }));
     writeFileSync(join(inbox, 'ignore.txt'), 'x');
     writeFileSync(join(inbox, 'data.csv'), 'a,b\n1,2\n');
+    core.services.triggers.start(); // the module's deferred start must not reset live triggers
     writeFileSync(join(inbox, 'more.csv'), 'a,b\n3,4\n'); // arrives while the first run is busy: queued, not dropped
     await allDone;
     expect(files.sort()).toEqual(['data.csv', 'more.csv']);
