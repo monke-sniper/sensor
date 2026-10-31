@@ -2,7 +2,7 @@
 // on Linux CI), drives it through the shell bridge and the local API.
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,10 +24,21 @@ const PAGE = `<!doctype html><html><head><title>Fixture Article</title><meta pro
 <input type="file" id="file"><div id="fname"></div><script>document.getElementById('file').onchange=e=>document.getElementById('fname').textContent=e.target.files[0].name</script>
 </body></html>`;
 
+// a stand-in for an AI chat site: composer, attachments, streamed-ish answer
+const CHAT = `<!doctype html><title>Local Chat</title><div id="log"></div>
+<form id="f"><textarea id="composer"></textarea><input type="file" id="att"><button type="submit">Send</button></form>
+<script>
+const $ = (id) => document.getElementById(id);
+$('f').onsubmit = (e) => { e.preventDefault(); const t = $('composer').value; const u = document.createElement('div'); u.className = 'user'; u.textContent = t; $('log').append(u); $('composer').value = '';
+  const a = document.createElement('div'); a.className = 'assistant'; $('log').append(a); let i = 0; const full = 'echo: ' + t + ($('att').files[0] ? ' +' + $('att').files[0].name : '');
+  const iv = setInterval(() => { a.textContent = full.slice(0, i += 4); if (i >= full.length) clearInterval(iv); }, 60); };
+</script>`;
+
 const server = createServer((req, res) => {
   if (req.url === '/download.txt') { res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment; filename="report.txt"' }); return res.end('hello download'); }
   if (req.url === '/feed.xml') { res.writeHead(200, { 'content-type': 'application/rss+xml' }); return res.end(`<?xml version="1.0"?><rss version="2.0"><channel><title>Fixture Feed</title><item><title>Item One</title><link>http://x/1</link><guid>1</guid><pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate><description>first</description></item></channel></rss>`); }
   res.writeHead(200, { 'content-type': 'text/html' });
+  if (req.url === '/chat') return res.end(CHAT);
   res.end(req.url === '/two' ? '<title>Two</title><p>second</p>' : PAGE);
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -50,7 +61,14 @@ app.process().stdout?.on('data', (d) => logs.push(String(d)));
 app.process().stderr?.on('data', (d) => logs.push(String(d)));
 
 try {
-  const win = await app.firstWindow();
+  // the palette overlay is also a page (index.html#overlay): pick the shell itself
+  await app.firstWindow();
+  let win = null;
+  for (let i = 0; i < 100 && !win; i++) {
+    win = app.windows().find((w) => /index\.html$/.test(w.url())) ?? null;
+    if (!win) await new Promise((r) => setTimeout(r, 200));
+  }
+  if (!win) throw new Error('shell window not found: ' + app.windows().map((w) => w.url()).join(', '));
   await win.waitForFunction(() => !!window.sensor, null, { timeout: 30000 });
   await win.waitForSelector('.sidebar', { timeout: 30000, state: 'attached' });
   const run = (id, args = {}) => win.evaluate(([i, a]) => window.sensor.run(i, a), [id, args]);
@@ -128,7 +146,6 @@ try {
 
   // ---- knowledge: vault capture
   const vault = join(dataDir, 'vault');
-  const { mkdirSync } = await import('node:fs');
   mkdirSync(join(vault, '.obsidian'), { recursive: true });
   await run('notes.addVault', { path: vault });
   await run('tabs.navigate', { id: tab.id, url: base + '/' });
@@ -186,6 +203,74 @@ try {
     check('CLI token cannot grant itself admin', denied.includes('lacks scope'), denied.trim());
   } else check('CLI binary present (run npm run cli:build)', false);
 
+
+  // ---- macros: record real (trusted) input, edit, replay
+  const mtab = await run('tabs.open', { url: base + '/' });
+  await win.waitForTimeout(600);
+  await run('macros.record');
+  await win.waitForTimeout(200);
+  await run('page.type', { id: mtab.id, selector: '#q', text: 'hello macro' });
+  await run('page.click', { id: mtab.id, selector: '#go' });
+  await win.waitForTimeout(400);
+  const recorded = await run('macros.stopRecording', { name: 'e2e search' });
+  const rops = recorded.definition.steps.map((s) => s.op);
+  check('macro recorder captures open/type/click', rops[0] === 'open' && rops.includes('type') && rops.includes('click'), rops.join(','));
+  const typeStep = recorded.definition.steps.find((s) => s.op === 'type');
+  check('recorded steps carry fallback selectors', typeStep?.selectors?.length >= 2 && typeStep.text === 'hello macro', JSON.stringify(typeStep?.selectors));
+  const def = { ...recorded.definition, inputs: { q: { type: 'string', default: 'replayed' } } };
+  def.steps = def.steps.map((s) => (s.op === 'type' ? { ...s, text: '{{q}}' } : s));
+  def.steps.push({ op: 'extract', selector: '#out', save: 'out' }, { op: 'output', name: 'out', value: '{{out}}' });
+  await run('macros.save', { id: recorded.id, definition: def });
+  const replay = await run('macros.run', { id: recorded.id, inputs: { q: 'from replay' }, wait: true });
+  check('macro replays deterministically with inputs', replay.state === 'completed' && replay.outputs.out === 'sent:from replay', replay.error ?? JSON.stringify(replay.outputs));
+  await run('triggers.add', { macro: recorded.id, kind: 'event', config: { topic: 'e2e.ping' } });
+  check('triggers can be attached to macros', (await run('triggers.list', { macro: recorded.id })).length === 1);
+
+  // ---- AI website workflow against a local chat page
+  await run('ai.addProvider', { name: 'Local Chat', url: base + '/chat', kind: 'generic' });
+  const att = join(dataDir, 'notes.txt');
+  writeFileSync(att, 'attachment');
+  const sent = await run('ai.send', { provider: 'Local Chat', text: 'hi there', files: [att], target: 'tab' });
+  check('ai.send inserts text and attaches files without sending', sent.files === 1 && sent.submitted === false, JSON.stringify(sent));
+  const composer = await run('page.eval', { id: sent.tab, js: "document.getElementById('composer').value" });
+  check('composer holds the prompt', composer.result === 'hi there', composer.result);
+  await run('ai.submit', { tab: sent.tab, provider: 'Local Chat' });
+  const waited = await run('ai.wait', { tab: sent.tab, timeout: 15000, stableMs: 800 });
+  check('ai.wait returns the finished answer', waited.done && waited.text === 'echo: hi there +notes.txt', JSON.stringify(waited));
+  const conv = await run('ai.read', { tab: sent.tab, all: true });
+  check('ai.read returns both turns in order', conv.messages?.map((m) => m.role).join(',') === 'user,assistant', JSON.stringify(conv));
+
+  // ---- projects, worktrees, agents in a real PTY
+  const { execFileSync: ex } = await import('node:child_process');
+  const repo = join(dataDir, 'demo-repo');
+  mkdirSync(repo);
+  const g = (...a) => ex('git', a, { cwd: repo, stdio: 'pipe' });
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 'e2e@example.com'); g('config', 'user.name', 'E2E'); g('config', 'commit.gpgsign', 'false');
+  writeFileSync(join(repo, 'README.md'), '# demo\n'); g('add', '.'); g('commit', '-q', '-m', 'init');
+  const proj = await run('projects.add', { path: repo });
+  const wt = await run('git.worktreeAdd', { project: proj.id, branch: 'e2e/feature' });
+  check('worktree created next to the repo', existsSync(join(wt.path, 'README.md')), wt.path);
+  const ag = await run('agents.start', { agent: 'shell', path: wt.path, panel: false });
+  await run('agents.send', { id: ag.id, text: 'git branch --show-current' });
+  let agOut = '';
+  for (let i = 0; i < 40 && !agOut.includes('e2e/feature'); i++) { await win.waitForTimeout(100); agOut = (await run('agents.read', { id: ag.id })).output; }
+  check('agent session runs in the worktree terminal', agOut.includes('e2e/feature'));
+  await run('agents.stop', { id: ag.id });
+  const ov = await run('projects.overview', { id: proj.id });
+  check('project overview lists worktrees with protection', ov.worktrees.length === 2 && ov.worktrees[0].protected === true);
+
+  // ---- checkpoints
+  const cp = await run('backup.now');
+  const vf = await run('backup.verify', { slot: cp.slot });
+  check('checkpoint written and verified', vf[0].ok, JSON.stringify(vf));
+
+  // ---- new panels render
+  for (const [tool, text] of [['macros', 'e2e search'], ['projects', 'demo-repo'], ['ai', 'Local Chat'], ['backups', 'Create checkpoint']]) {
+    await run('panels.open', { tool });
+    let found = false;
+    for (let i = 0; i < 30 && !found; i++) { await win.waitForTimeout(100); found = await win.evaluate((t) => document.body.innerText.includes(t), text); }
+    check(`${tool} panel renders`, found);
+  }
   await win.screenshot({ path: join(shots, 'shell.png') }).catch(() => {});
   if (process.env.SENSOR_E2E_EXTRA) {
     const extra = await import(process.env.SENSOR_E2E_EXTRA);

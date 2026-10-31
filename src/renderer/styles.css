@@ -161,3 +161,7 @@ h3.sub { font: 600 10px var(--mono); color: var(--mute); letter-spacing: .12em; 
 .terminal-tool { display: flex; flex-direction: column; height: 100%; background: var(--bg); }
 .xterm-host { flex: 1; min-height: 0; padding: 4px 0 0 6px; }
 .tool-panel .panel-body:has(.terminal-tool), .tool-panel .panel-body:has(.obsidian-panel) { overflow: hidden; }
+.result.diff { max-height: 50vh; overflow: auto; white-space: pre; }
+.macros textarea, .ai textarea { font-family: var(--mono); font-size: 11px; }
+.row-sub.pre { white-space: pre-wrap; }
+.statusbar .rec { color: #f85149; font-weight: 600; }

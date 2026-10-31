@@ -52,7 +52,7 @@ export function isIncognito(profileId: string): boolean {
 
 const TOOL_KINDS: ToolKind[] = [
   'notes', 'files', 'downloads', 'history', 'bookmarks', 'rss', 'clipboard', 'macros', 'search', 'terminal',
-  'agents', 'projects', 'obsidian', 'settings', 'notifications', 'annotations', 'documents', 'providers',
+  'agents', 'projects', 'obsidian', 'settings', 'notifications', 'annotations', 'documents', 'providers', 'ai', 'backups',
 ];
 
 /** Turn user input from an address bar into a URL. */
@@ -670,6 +670,7 @@ export function workspaceCommands(core: Core): CommandDef[] {
         tool: { type: 'string', enum: TOOL_KINDS as string[], positional: 0 },
         tab: { type: 'string', description: 'tab id to show as a website panel' },
         url: { type: 'string', description: 'open a new website panel at this URL' },
+        state: { type: 'object', description: 'initial tool state' },
         side: { type: 'string', enum: ['left', 'right', 'top', 'bottom'], default: 'right' },
         target: { type: 'string', description: 'layout node to split' },
         size: { type: 'number', default: 0.33 },
@@ -677,7 +678,7 @@ export function workspaceCommands(core: Core): CommandDef[] {
       },
       handler: (a) => {
         let panel: Panel;
-        if (a.tool) panel = { kind: 'tool', tool: a.tool };
+        if (a.tool) panel = { kind: 'tool', tool: a.tool, ...(a.state ? { state: a.state } : {}) };
         else if (a.tab) panel = { kind: 'web', tabId: W().tab(a.tab).id };
         else if (a.url) panel = { kind: 'web', tabId: W().openTab({ url: a.url, workspaceId: a.workspace, background: true }).id };
         else throw new Error('one of tool, tab or url is required');

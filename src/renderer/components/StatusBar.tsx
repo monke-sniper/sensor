@@ -7,6 +7,7 @@ export function StatusBar() {
   const [agents, setAgents] = createSignal(0);
   const [macros, setMacros] = createSignal(0);
   const [lastMsg, setLastMsg] = createSignal('');
+  const [recording, setRecording] = createSignal(false);
   onMount(() => {
     const active = new Set<string>();
     const runs = new Set<string>();
@@ -14,8 +15,9 @@ export function StatusBar() {
     const off = onEvent((e) => {
       if (e.topic === 'download.started') active.add(e.data.id);
       if (/^download\.(completed|cancelled|interrupted)$/.test(e.topic)) active.delete(e.data?.id);
-      if (e.topic === 'macro.started') runs.add(e.data.runId);
-      if (e.topic === 'macro.completed' || e.topic === 'macro.failed') runs.delete(e.data.runId);
+      if (e.topic === 'macro.started') runs.add(e.data.id);
+      if (e.topic === 'macro.completed' || e.topic === 'macro.failed' || e.topic === 'macro.cancelled') runs.delete(e.data.id);
+      if (e.topic === 'macro.recording') setRecording(!!e.data.on);
       if (e.topic === 'agent.started') ag.add(e.data.id);
       if (e.topic === 'agent.exited') ag.delete(e.data.id);
       if (e.topic === 'notification.posted') {
@@ -40,10 +42,13 @@ export function StatusBar() {
         <span class="seg accent" onClick={() => run('downloads.open')}>↓ {downloads()}</span>
       </Show>
       <Show when={agents() > 0}>
-        <span class="seg accent" onClick={() => run('panels.open', { tool: 'agents' })}>AGENTS {agents()}</span>
+        <span class="seg accent click" onClick={() => run('panels.open', { tool: 'projects' })}>AGENTS {agents()}</span>
       </Show>
       <Show when={macros() > 0}>
-        <span class="seg accent">MACRO {macros()}</span>
+        <span class="seg accent click" title="Stop all macros: Ctrl+Shift+Esc" onClick={() => run('panels.open', { tool: 'macros' })}>MACRO {macros()}</span>
+      </Show>
+      <Show when={recording()}>
+        <span class="seg click rec" title="Recording a macro: click to stop" onClick={() => run('panels.open', { tool: 'macros' })}>● REC</span>
       </Show>
       <Show when={lastMsg()}>
         <span class="seg msg">{lastMsg()}</span>

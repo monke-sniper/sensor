@@ -8,6 +8,7 @@ import type { CommandDef } from '../core/commands';
 import { allModules } from '../core/modules';
 import { principalLabel } from '../core/permissions';
 import { isIncognito } from '../core/services/workspaces';
+import { findLeafBy } from '../core/layout';
 import { ShortcutMap, type KeyInput } from './accelerators';
 import { ElectronBrowserHost, WEB_PRELOAD, type ViewRect } from './browser';
 import { electronPlatformHost } from './platform';
@@ -483,6 +484,21 @@ async function boot(): Promise<void> {
     if (e.topic === 'panel.float') float(e.data.tabId);
     if (e.topic === 'notification.posted' && !win?.isFocused()) core.platform.osNotify?.(e.data.title, e.data.body ?? '');
     if (e.topic === 'settings.changed' && e.data.key === 'shortcuts.overrides') rebuildShortcuts();
+    if (e.topic === 'macro.waiting') {
+      // a running macro needs an answer: make sure its panel is visible
+      const w = core.workspaces.active();
+      if (!findLeafBy(w.layout.root, (p) => p.kind === 'tool' && p.tool === 'macros')) core.run('macros.panel').catch(() => {});
+    }
+    if (e.topic === 'backup.restorePending' && win && !win.isDestroyed() && !isTest) {
+      dialog
+        .showMessageBox(win, { type: 'question', buttons: ['Restart now', 'Later'], defaultId: 0, cancelId: 1, message: 'Checkpoint restore is ready', detail: 'Sensor applies it on the next start.' })
+        .then(({ response }) => {
+          if (response === 0) {
+            app.relaunch();
+            app.quit();
+          }
+        });
+    }
   });
 
   ipcMain.handle('sensor:run', async (_e, id: string, args: any) => {

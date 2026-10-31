@@ -122,24 +122,48 @@ export class AI {
 
   /** An existing, non-incognito tab on the provider's site in the active workspace. */
   findTab(p: Provider): string | null {
-    const host = safeHost(p.url);
     const w = this.core.workspaces.active();
-    const tabs = this.core.workspaces.allTabs().filter((t) => t.workspaceId === w.id && !t.profileId.startsWith('incognito') && sameSite(safeHost(t.url), host));
+    const tabs = this.core.workspaces.allTabs().filter((t) => t.workspaceId === w.id && !t.profileId.startsWith('incognito') && providerMatches(p, t.url));
     if (!tabs.length) return null;
     return (tabs.find((t) => t.id === w.activeTab) ?? tabs[0]).id;
   }
+
+  /** The provider a tab belongs to, if any. */
+  providerFor(url: string): Provider | null {
+    return this.providers().find((p) => providerMatches(p, url)) ?? null;
+  }
 }
 
-function safeHost(url: string): string {
+/**
+ * Known sites match on host (conversations live under other paths); generic
+ * providers (self-hosted UIs, several apps on one host) also need the path.
+ */
+export function providerMatches(p: { url: string; kind: string }, tabUrl: string): boolean {
+  let a: URL, b: URL;
   try {
-    return new URL(url).hostname.replace(/^www\./, '');
+    a = new URL(p.url);
+    b = new URL(tabUrl);
   } catch {
-    return '';
+    return false;
   }
+  if (!sameSite(a.host.replace(/^www\./, ''), b.host.replace(/^www\./, ''))) return false;
+  if (p.kind !== 'generic' && ADAPTERS[p.kind]) return true;
+  const dir = a.pathname.replace(/\/+$/, '');
+  return !dir || b.pathname === dir || b.pathname.startsWith(dir + '/');
 }
 
 function sameSite(a: string, b: string): boolean {
   return !!a && !!b && (a === b || a.endsWith('.' + b) || b.endsWith('.' + a));
+}
+
+/** https anywhere, plain http only for local tools (e.g. a self-hosted chat UI). */
+function okUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname));
+  } catch {
+    return false;
+  }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -201,7 +225,7 @@ function aiCommands(core: Core, A: AI): CommandDef[] {
       id: 'ai.addProvider', title: 'Add AI Provider', scopes: ['app:write'], palette: false,
       params: { name: { type: 'string', required: true, positional: 0 }, url: { type: 'string', required: true, positional: 1 }, kind: { type: 'string', default: 'generic', description: `adapter: ${Object.keys(ADAPTERS).join(', ')}` }, purpose: { type: 'string' } },
       handler: (a) => {
-        if (!/^https:\/\//.test(a.url)) throw new CommandError('invalid_params', 'provider URL must be https');
+        if (!okUrl(a.url)) throw new CommandError('invalid_params', 'provider URL must be https (or http on localhost)');
         const id = uid('prv_');
         const pos = (core.db.get('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM providers')?.p as number) ?? 0;
         core.db.run('INSERT INTO providers (id, name, url, kind, purpose, position) VALUES (?, ?, ?, ?, ?, ?)', id, a.name, a.url, a.kind, a.purpose ?? null, pos);
@@ -213,7 +237,7 @@ function aiCommands(core: Core, A: AI): CommandDef[] {
       params: { id: { type: 'string', required: true, positional: 0 }, name: { type: 'string' }, url: { type: 'string' }, kind: { type: 'string' }, purpose: { type: 'string' }, position: { type: 'number' } },
       handler: (a) => {
         const p = A.provider(a.id);
-        if (a.url && !/^https:\/\//.test(a.url)) throw new CommandError('invalid_params', 'provider URL must be https');
+        if (a.url && !okUrl(a.url)) throw new CommandError('invalid_params', 'provider URL must be https (or http on localhost)');
         core.db.run('UPDATE providers SET name = ?, url = ?, kind = ?, purpose = ?, position = ? WHERE id = ?', a.name ?? p.name, a.url ?? p.url, a.kind ?? p.kind, a.purpose ?? p.purpose, a.position ?? p.position, p.id);
         return A.provider(p.id);
       },
@@ -297,7 +321,7 @@ function aiCommands(core: Core, A: AI): CommandDef[] {
       handler: async (a, ctx) => {
         const tab = a.tab ?? core.workspaces.active().activeTab;
         if (!tab) throw new CommandError('failed', 'no tab');
-        const kind = a.provider ? A.provider(a.provider).kind : (A.providers().find((p) => sameSite(safeHost(p.url), safeHost(core.workspaces.tab(tab).url)))?.kind ?? 'generic');
+        const kind = a.provider ? A.provider(a.provider).kind : (A.providerFor(core.workspaces.tab(tab).url)?.kind ?? 'generic');
         const ad = A.adapter(kind);
         // the send button is often disabled until attachments finish uploading
         const end = Date.now() + a.timeout;
@@ -322,7 +346,7 @@ function aiCommands(core: Core, A: AI): CommandDef[] {
       handler: async (a) => {
         const tab = a.tab ?? core.workspaces.active().activeTab;
         if (!tab) throw new CommandError('failed', 'no tab');
-        const kind = A.providers().find((p) => sameSite(safeHost(p.url), safeHost(core.workspaces.tab(tab).url)))?.kind ?? 'generic';
+        const kind = A.providerFor(core.workspaces.tab(tab).url)?.kind ?? 'generic';
         const msgs = await readTurns(core, tab, A.adapter(kind), a.format);
         const answers = msgs.filter((m) => m.role === 'assistant').map((m) => m.text);
         return a.all ? { messages: msgs } : { text: answers[answers.length - 1] ?? null, count: answers.length };
@@ -335,7 +359,7 @@ function aiCommands(core: Core, A: AI): CommandDef[] {
       handler: async (a) => {
         const tab = a.tab ?? core.workspaces.active().activeTab;
         if (!tab) throw new CommandError('failed', 'no tab');
-        const kind = A.providers().find((p) => sameSite(safeHost(p.url), safeHost(core.workspaces.tab(tab).url)))?.kind ?? 'generic';
+        const kind = A.providerFor(core.workspaces.tab(tab).url)?.kind ?? 'generic';
         const ad = A.adapter(kind);
         const end = Date.now() + a.timeout;
         let last = '';
@@ -418,7 +442,7 @@ function aiCommands(core: Core, A: AI): CommandDef[] {
         const tab = a.tab ?? core.workspaces.active().activeTab;
         if (!tab) throw new CommandError('failed', 'no tab');
         const t = core.workspaces.tab(tab);
-        const prov = A.providers().find((p) => sameSite(safeHost(p.url), safeHost(t.url)));
+        const prov = A.providerFor(t.url);
         let turns = await readTurns(core, tab, A.adapter(prov?.kind ?? 'generic'), 'markdown');
         let body: string;
         if (turns.length) {

@@ -11,7 +11,7 @@
     "start": "electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:e2e": "node scripts/build.mjs && playwright test",
+    "test:e2e": "node scripts/build.mjs && node tests/e2e/smoke.mjs",
     "cli:build": "node scripts/build-cli.mjs"
   },
   "license": "UNLICENSED",
