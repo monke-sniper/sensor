@@ -126,8 +126,39 @@ export function MacrosTool(props: { state?: { id?: string } }) {
             )}
           </For>
         </Show>
+        <ScriptsSection />
       </Show>
     </div>
+  );
+}
+
+function ScriptsSection() {
+  const [info, refetch] = useCommand<any>('scripts.list', () => ({}), ['script.saved', 'script.completed', 'script.failed', 'script.started']);
+  const [out, setOut] = createSignal('');
+  const runScript = (name: string) => {
+    setOut(`running ${name}…`);
+    run<any>('scripts.run', { name })
+      .then((r) => setOut([...r.logs, `→ ${JSON.stringify(r.result)} (${r.ms} ms)`].join('\n')))
+      .catch((e) => setOut(errText(e)))
+      .finally(refetch);
+  };
+  return (
+    <>
+      <h3 class="sub">Scripts</h3>
+      <For each={info()?.scripts} fallback={<div class="muted small-note">No scripts. JavaScript files in the scripts folder appear here.</div>}>
+        {(sc: any) => (
+          <div class="row">
+            <div class="row-main">
+              <div class="row-title">{sc.title}</div>
+              <div class="row-sub ellipsis">{sc.description || sc.file} · {sc.scopes.join(', ') || 'no permissions'}</div>
+            </div>
+            <button onClick={() => runScript(sc.name)}>Run</button>
+          </div>
+        )}
+      </For>
+      <div class="list-actions"><button onClick={() => run('scripts.openFolder').then(refetch)}>Open scripts folder</button></div>
+      <Show when={out()}><pre class="result">{out()}</pre></Show>
+    </>
   );
 }
 
