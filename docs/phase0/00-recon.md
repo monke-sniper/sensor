@@ -44,3 +44,14 @@ Proven components we should integrate rather than build:
 3. **Obsidian embedding acceptance.** Real embedding on Windows means reparenting the Obsidian window into Sensor's (Win32 `SetParent`). It is genuine but has focus/DPI/input edge cases. Acceptable as the primary mechanism?
 
 None of these block Phase 1 work on the shell.
+
+## Update: Orca located and decision
+
+Orca is [stablyai/orca](https://github.com/stablyai/orca): an MIT-licensed Electron + React IDE for parallel agentic development, about 2.5M lines of TypeScript, with its own `orca` CLI (`orca repo add`, `orca worktree create --agent`, `orca agent launch`, `orca status`).
+
+**Decision: integrate, don't absorb.**
+
+- Forking Orca would make Sensor carry a second, much larger application with its own architecture and release cadence. It would also commit Sensor to React, against the PRD's performance priority.
+- Instead, Sensor implements the dev-environment basics natively and leanly: projects, git, worktrees with protected branches, tasks, handoffs, decisions, agents in terminals and usage.
+- Sensor bridges to Orca through Orca's public CLI: `orca.status`, `orca.addProject`, `orca.worktrees`, `orca.createWorktree`, `orca.launchAgent`. Users who want Orca's richer orchestration keep using it side by side.
+- If specific Orca modules prove worth reusing later, the MIT license allows copying them with attribution.

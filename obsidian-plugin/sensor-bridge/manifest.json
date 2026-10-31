@@ -1,0 +1,9 @@
+{
+  "id": "sensor-bridge",
+  "name": "Sensor Bridge",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Connects Obsidian to the Sensor app over its local API: insert captures and tab links at your cursor, pull the current Sensor page into a note, open a note's links in Sensor.",
+  "author": "Sensor",
+  "isDesktopOnly": true
+}

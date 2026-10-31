@@ -410,8 +410,22 @@ function notesCommands(core: Core, N: Notes): CommandDef[] {
       description: 'Inserts text at the cursor of the active Obsidian note (requires the sensor-bridge plugin).',
       params: { text: { type: 'string', required: true, positional: 0 } },
       handler: (a) => {
+        const seen = core.services.obsidianBridge?.lastSeen ?? 0;
+        const connected = Date.now() - seen < 75_000;
+        if (!connected) throw new Error('the sensor-bridge plugin is not connected (install it in Obsidian from obsidian-plugin/sensor-bridge)');
         core.events.emit('note.obsidianInsert', { text: a.text });
         return { sent: true };
+      },
+    },
+    {
+      id: 'obsidian.bridgeHello', title: 'Obsidian Bridge Heartbeat', scopes: ['notes:read'], palette: false,
+      description: 'Called by the sensor-bridge Obsidian plugin every 30s.',
+      params: { vault: { type: 'string' }, version: { type: 'string' } },
+      handler: (a) => {
+        const first = !core.services.obsidianBridge || Date.now() - core.services.obsidianBridge.lastSeen > 75_000;
+        core.services.obsidianBridge = { lastSeen: Date.now(), vault: a.vault ?? null, version: a.version ?? null };
+        if (first) core.events.emit('obsidian.bridgeConnected', { vault: a.vault ?? null });
+        return { ok: true };
       },
     },
     {

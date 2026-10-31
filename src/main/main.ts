@@ -30,6 +30,8 @@ if (!isTest && !app.requestSingleInstanceLock()) {
 
 app.setName('Sensor');
 // Sites (notably Google sign-in) reject user agents that advertise Electron.
+// no background calls to Google's component updater (privacy: nothing leaves without the user)
+app.commandLine.appendSwitch('disable-component-update');
 app.userAgentFallback = app.userAgentFallback.replace(/\s(Electron|sensor)\/\S+/gi, '');
 
 let core: Core;
@@ -460,7 +462,9 @@ async function boot(): Promise<void> {
   browserHost.sessionFor('default');
 
   core.bus.registerAll(mainCommands());
-  for (const m of allModules({ indexerWorker: join(__dirname, 'indexer-worker.js') })) core.use(m);
+  // packaged builds unpack the worker next to the asar (worker threads can't load from inside it)
+  const workerPath = join(__dirname, 'indexer-worker.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+  for (const m of allModules({ indexerWorker: existsSync(workerPath) ? workerPath : join(__dirname, 'indexer-worker.js') })) core.use(m);
   for (const m of mainModules(() => ({ win, browserHost, overlay }))) core.use(m);
   rebuildShortcuts();
 

@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: cli/go.mod
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+        env:
+          SENSOR_TEST: '1'
+      - name: Build app
+        run: node scripts/build.mjs
+      - name: Build CLI (all platforms)
+        run: node scripts/build-cli.mjs --all
+      - name: E2E (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+          xvfb-run -a node tests/e2e/smoke.mjs
+      - name: E2E (Windows)
+        if: runner.os == 'Windows'
+        run: node tests/e2e/smoke.mjs
+      - name: Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  package-windows:
+    name: Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: cli/go.mod
+      - run: npm ci
+      - name: Build installer + portable zip (unsigned)
+        run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sensor-windows
+          path: |
+            release/*.exe
+            release/*.zip
+          if-no-files-found: error

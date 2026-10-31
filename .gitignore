@@ -6,3 +6,4 @@ bin/
 .vite/
 test-results/
 /tmp/
+release/
