@@ -51,7 +51,7 @@ describe('sensor-bridge Obsidian plugin', () => {
   it('connects with the CLI token, receives inserts and runs commands', async () => {
     const { core, dir } = makeCore({ modules: allModules() });
     cleanups.push(() => core.dispose());
-    const sock = join(dir, 'api.sock');
+    const sock = process.platform === 'win32' ? `\\\\.\\pipe\\sensor-test-${process.pid}-${Date.now()}` : join(dir, 'api.sock');
     const server = await startApiServer(core, { dataDir: dir, socketPath: sock });
     cleanups.push(() => server.close());
 

@@ -15,6 +15,7 @@ npm run cli:build           # build the `sensor` CLI into bin/
 npm test                    # unit tests
 npm run test:e2e            # builds, launches the real app and drives it (use xvfb-run on headless Linux)
 npm run dist:win            # Windows installer + portable zip into release/ (unsigned)
+npm run bench               # startup, memory, tab, search and API timings
 ```
 
 Every CI run on the default branch and pull requests uploads an unsigned Windows build as the `Sensor-windows` artifact.
@@ -71,7 +72,7 @@ The default CLI token cannot do admin or destructive things: create tokens, dele
 | User scripting (`scripts:exec`) | planned | The scope exists; only task validation commands run today |
 | Themes | partial | Custom CSS setting |
 | Code signing, auto-update | planned | CI builds are unsigned |
-| Performance benchmarks | planned | Live CPU/RAM/process metrics are in the status bar |
+| Performance benchmarks | implemented | `npm run bench`; results in [docs/benchmarks.md](docs/benchmarks.md). Live CPU/RAM/process metrics in the status bar |
 
 ## Design in one paragraph
 

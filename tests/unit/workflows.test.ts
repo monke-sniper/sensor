@@ -256,12 +256,21 @@ describe('triggers', () => {
     await expect(core.run('triggers.add', { macro: 'echo', kind: 'event', config: { topic: 'macro.step' } })).rejects.toThrow(/can't trigger/);
 
     const inbox = tempDir('inbox-');
-    await core.run('triggers.add', { macro: 'echo', kind: 'file', config: { dir: inbox, pattern: '*.csv', settleMs: 50 } });
-    const fileRun = new Promise<any>((r) => core.events.on('macro.completed', (e) => e.data.outputs?.got?.endsWith('.csv') && r(e.data)));
+    writeFileSync(join(inbox, 'already.csv'), 'old'); // present before the trigger: never fires
+    await core.run('macros.save', { definition: { name: 'slowfile', steps: [{ op: 'wait', ms: 150 }, { op: 'output', name: 'file', value: '{{name}}' }] } });
+    await core.run('triggers.add', { macro: 'slowfile', kind: 'file', config: { dir: inbox, pattern: '*.csv', settleMs: 50, pollMs: 200 } });
+    const files: string[] = [];
+    const allDone = new Promise<void>((r) => core.events.on('macro.completed', (e) => {
+      if (e.data.macro !== 'slowfile') return;
+      files.push(e.data.outputs.file);
+      if (files.length === 2) r();
+    }));
     writeFileSync(join(inbox, 'ignore.txt'), 'x');
     writeFileSync(join(inbox, 'data.csv'), 'a,b\n1,2\n');
-    expect((await fileRun).outputs.got).toBe(join(inbox, 'data.csv'));
-  });
+    writeFileSync(join(inbox, 'more.csv'), 'a,b\n3,4\n'); // arrives while the first run is busy: queued, not dropped
+    await allDone;
+    expect(files.sort()).toEqual(['data.csv', 'more.csv']);
+  }, 20000);
 });
 
 // ------------------------------------------------------------------ dev env

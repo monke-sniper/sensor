@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { makeCore, tempDir } from './helpers';
 import { allModules } from '../../src/core/modules';
@@ -77,8 +77,9 @@ describe('files', () => {
     expect(found[0]?.path).toBe(join(dir, 'a.txt'));
   });
   it('renameTarget tokens', () => {
-    expect(renameTarget('/x/photo.JPG', '{parent}-{n:3}{ext}', 4)).toBe('/x/x-005.JPG');
-    expect(renameTarget('/x/IMG_001 copy.png', '{name}{ext}', 0, ' copy$', '')).toBe('/x/IMG_001.png');
+    const x = join(sep, 'x');
+    expect(renameTarget(join(x, 'photo.JPG'), '{parent}-{n:3}{ext}', 4)).toBe(join(x, 'x-005.JPG'));
+    expect(renameTarget(join(x, 'IMG_001 copy.png'), '{name}{ext}', 0, ' copy$', '')).toBe(join(x, 'IMG_001.png'));
   });
 });
 

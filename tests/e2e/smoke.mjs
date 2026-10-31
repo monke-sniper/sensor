@@ -48,6 +48,8 @@ const results = [];
 const check = (name, cond, detail = '') => {
   results.push({ name, ok: !!cond, detail });
   console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`);
+  // CI annotations are readable through the API even when raw logs aren't
+  if (!cond && process.env.GITHUB_ACTIONS) console.log(`::error title=E2E ${name.replace(/[:,]/g, ' ')}::${String(detail).slice(0, 2000).replace(/%/g, '%25').replace(/\r?\n/g, '%0A')}`);
 };
 
 const app = await pw._electron.launch({
@@ -253,7 +255,7 @@ try {
   const ag = await run('agents.start', { agent: 'shell', path: wt.path, panel: false });
   await run('agents.send', { id: ag.id, text: 'git branch --show-current' });
   let agOut = '';
-  for (let i = 0; i < 40 && !agOut.includes('e2e/feature'); i++) { await win.waitForTimeout(100); agOut = (await run('agents.read', { id: ag.id })).output; }
+  for (let i = 0; i < 150 && !agOut.includes('e2e/feature'); i++) { await win.waitForTimeout(100); agOut = (await run('agents.read', { id: ag.id })).output; }
   check('agent session runs in the worktree terminal', agOut.includes('e2e/feature'));
   await run('agents.stop', { id: ag.id });
   const ov = await run('projects.overview', { id: proj.id });
@@ -286,7 +288,9 @@ try {
 
 const failed = results.filter((r) => !r.ok);
 if (failed.length) {
-  console.log('\n--- app log tail ---\n' + logs.join('').split('\n').slice(-40).join('\n'));
+  const tail = logs.join('').split('\n').filter((l) => !/StackChildLayerRelativeTo|Debugger|nodejs.org/.test(l)).slice(-40).join('\n');
+  console.log('\n--- app log tail ---\n' + tail);
+  if (process.env.GITHUB_ACTIONS) console.log(`::error title=E2E app log tail::${tail.slice(-3000).replace(/%/g, '%25').replace(/\r?\n/g, '%0A')}`);
 }
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

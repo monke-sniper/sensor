@@ -14,7 +14,8 @@
     "test:e2e": "node scripts/build.mjs && node tests/e2e/smoke.mjs",
     "cli:build": "node scripts/build-cli.mjs",
     "dist": "node scripts/build.mjs && node scripts/build-cli.mjs --all && electron-builder --publish never",
-    "dist:win": "node scripts/build.mjs && node scripts/build-cli.mjs --all && electron-builder --win --publish never"
+    "dist:win": "node scripts/build.mjs && node scripts/build-cli.mjs --all && electron-builder --win --publish never",
+    "bench": "node scripts/build.mjs && node scripts/bench.mjs --out docs/benchmarks.json"
   },
   "license": "UNLICENSED",
   "devDependencies": {

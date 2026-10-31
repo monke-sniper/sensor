@@ -1,0 +1,29 @@
+{
+  "when": "2026-10-31T22:10:31.228Z",
+  "machine": {
+    "platform": "linux",
+    "release": "6.18.44-fc-v185",
+    "cpus": 4,
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "memGB": 16
+  },
+  "metrics": {
+    "startupToShellMs": 589,
+    "idleMemMB": 650,
+    "idleProcesses": 6,
+    "tabLoadMedianMs": 99,
+    "tabLoadP95Ms": 168,
+    "memWith10TabsMB": 1692,
+    "processesWith10Tabs": 16,
+    "suspendedTabs": 10,
+    "memAfterSuspendMB": 690,
+    "suspendSavedMB": 1002,
+    "pageReadMarkdownMedianMs": 3.1,
+    "index2000FilesMs": 749,
+    "searchMedianMs": 3,
+    "searchP95Ms": 3.9,
+    "apiRoundTripMedianMs": 0.5,
+    "apiRoundTripP95Ms": 0.7,
+    "tabSwitchMedianMs": 2.4
+  }
+}

@@ -12,7 +12,7 @@
 //
 // Triggers start macros on a schedule, on events (e.g. download.completed),
 // when files arrive in a folder, or at startup.
-import { existsSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Core, CoreModule } from '../core';
 import { CommandError, type CommandDef } from '../commands';
@@ -748,6 +748,9 @@ export class Triggers {
   private timer: NodeJS.Timeout | null = null;
   private lastFire = new Map<string, number>();
   private seen = new Map<string, Set<string>>();
+  private polls = new Map<string, NodeJS.Timeout>();
+  /** file arrivals waiting for the trigger's current run to finish */
+  private queue = new Map<string, Record<string, any>[]>();
 
   constructor(private core: Core, private macros: Macros) {}
 
@@ -812,11 +815,21 @@ export class Triggers {
     return fired;
   }
 
-  fire(t: TriggerRow, data: Record<string, any>, at = Date.now()): MacroRun | null {
+  fire(t: TriggerRow, data: Record<string, any>, at = Date.now(), queue = false): MacroRun | null {
     const last = this.lastFire.get(t.id) ?? 0;
-    if (t.kind !== 'schedule' && at - last < 1000) return null; // debounce bursts
-    // one active run per trigger
-    for (const r of this.macros.runs.values()) if (r.trigger === t.id && (r.state === 'running' || r.state === 'waiting')) return null;
+    if (!queue && t.kind !== 'schedule' && at - last < 1000) return null; // debounce event bursts
+    // one active run per trigger; queued triggers (file arrivals) wait their turn instead of being dropped
+    for (const r of this.macros.runs.values()) {
+      if (r.trigger === t.id && (r.state === 'running' || r.state === 'waiting')) {
+        if (queue) {
+          const q = this.queue.get(t.id) ?? [];
+          if (!this.queue.has(t.id)) this.queue.set(t.id, q);
+          if (q.length < 1000) q.push(data);
+          r.done.then(() => this.drain(t));
+        }
+        return null;
+      }
+    }
     this.lastFire.set(t.id, at);
     this.core.db.run('UPDATE triggers SET last_fired = ? WHERE id = ?', at, t.id);
     const ctx = { event: data, trigger: { id: t.id, kind: t.kind } };
@@ -829,6 +842,12 @@ export class Triggers {
       this.core.notify('error', 'Trigger failed', String(e?.message ?? e), 'macros');
       return null;
     }
+  }
+
+  private drain(t: TriggerRow) {
+    const q = this.queue.get(t.id);
+    const next = q?.shift();
+    if (next) this.fire(t, next, Date.now(), true);
   }
 
   private arm(t: TriggerRow) {
@@ -846,38 +865,86 @@ export class Triggers {
       const dir = t.config.dir;
       if (!dir || !existsSync(dir)) return;
       const re = globToRegExp(t.config.pattern ?? '*');
+      const recursive = !!t.config.recursive;
+      const settle = Number(t.config.settleMs ?? 800);
       const seen = new Set<string>();
       this.seen.set(t.id, seen);
+      const pendingCheck = new Set<string>();
+      const list = (d: string, depth = 0): string[] => {
+        const out: string[] = [];
+        try {
+          for (const e of readdirSync(d, { withFileTypes: true })) {
+            const p = join(d, e.name);
+            if (e.isFile() && re.test(e.name)) out.push(p);
+            else if (recursive && e.isDirectory() && depth < 6) out.push(...list(p, depth + 1));
+          }
+        } catch {
+          /* unreadable */
+        }
+        return out;
+      };
+      const keyOf = (full: string) => {
+        const st = statSync(full);
+        return st.isFile() ? `${full}:${st.size}` : null;
+      };
+      // files already there don't fire
+      for (const f of list(dir)) {
+        try {
+          const k = keyOf(f);
+          if (k) seen.add(k);
+        } catch {
+          /* vanished */
+        }
+      }
+      // a file fires once its size stops changing (downloads, copies in progress)
+      const consider = (full: string) => {
+        if (pendingCheck.has(full) || !re.test(basename(full))) return;
+        let before: string | null;
+        try {
+          before = existsSync(full) ? keyOf(full) : null;
+        } catch {
+          return;
+        }
+        if (!before || seen.has(before)) return;
+        pendingCheck.add(full);
+        setTimeout(() => {
+          pendingCheck.delete(full);
+          try {
+            const now2 = existsSync(full) ? keyOf(full) : null;
+            if (!now2) return;
+            if (now2 !== before) return consider(full); // still growing
+            if (seen.has(now2)) return;
+            seen.add(now2);
+            if (seen.size > 20_000) seen.clear();
+            this.fire({ ...t, last_fired: null }, { path: full, name: basename(full) }, Date.now(), true);
+          } catch {
+            /* vanished */
+          }
+        }, settle);
+      };
       try {
-        const w = watch(dir, { recursive: !!t.config.recursive }, (_ev, name) => {
-          if (!name) return;
-          const file = String(name);
-          if (!re.test(basename(file))) return;
-          const full = join(dir, file);
-          // wait until the file stops growing (downloads, copies)
-          setTimeout(() => {
-            try {
-              if (!existsSync(full) || !statSync(full).isFile()) return;
-              const key = `${full}:${statSync(full).size}`;
-              if (seen.has(key)) return;
-              seen.add(key);
-              if (seen.size > 5000) seen.clear();
-              this.fire({ ...t, last_fired: null }, { path: full, name: basename(full) });
-            } catch {
-              /* vanished */
-            }
-          }, t.config.settleMs ?? 800);
+        const w = watch(dir, { recursive }, (_ev, name) => {
+          if (name) consider(join(dir, String(name)));
         });
+        w.on('error', () => {});
         this.watchers.set(t.id, w);
       } catch {
-        /* unwatchable */
+        /* unwatchable: polling below still works */
       }
+      // fs.watch misses events on some drives (network shares, some Windows setups): poll as well
+      const poll = setInterval(() => list(dir).forEach(consider), Math.max(200, Number(t.config.pollMs ?? 5000)));
+      poll.unref?.();
+      this.polls.set(t.id, poll);
     }
   }
 
   private disarm(id: string) {
     this.unsubs.get(id)?.();
     this.unsubs.delete(id);
+    const poll = this.polls.get(id);
+    if (poll) clearInterval(poll);
+    this.polls.delete(id);
+    this.queue.delete(id);
     this.watchers.get(id)?.close();
     this.watchers.delete(id);
     this.seen.delete(id);

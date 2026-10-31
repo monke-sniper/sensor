@@ -15,12 +15,12 @@ export interface ExecResult {
 }
 
 /** Run a program without a shell. Never throws for a non-zero exit; check `code`. */
-export function exec(cmd: string, args: string[], opts: { cwd?: string; timeout?: number; env?: Record<string, string>; input?: string } = {}): Promise<ExecResult> {
+export function exec(cmd: string, args: string[], opts: { cwd?: string; timeout?: number; env?: Record<string, string>; input?: string; verbatim?: boolean } = {}): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       cmd,
       args,
-      { cwd: opts.cwd, timeout: opts.timeout ?? 60_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true, env: opts.env ? { ...process.env, ...opts.env } : process.env, encoding: 'utf8' },
+      { cwd: opts.cwd, timeout: opts.timeout ?? 60_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true, windowsVerbatimArguments: !!opts.verbatim, env: opts.env ? { ...process.env, ...opts.env } : process.env, encoding: 'utf8' },
       (err: any, stdout, stderr) => {
         if (err && typeof err.code !== 'number') {
           if (err.killed) return resolve({ code: 124, stdout: String(stdout ?? ''), stderr: `${stderr ?? ''}\ntimed out` });
@@ -38,7 +38,7 @@ export function exec(cmd: string, args: string[], opts: { cwd?: string; timeout?
 /** Run a command line through the platform shell (for user-provided validation commands). */
 export function shell(commandLine: string, opts: { cwd?: string; timeout?: number } = {}): Promise<ExecResult> {
   return process.platform === 'win32'
-    ? exec(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', commandLine], opts)
+    ? exec(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${commandLine}"`], { ...opts, verbatim: true }) // same quoting as Node's shell: true
     : exec('/bin/sh', ['-c', commandLine], opts);
 }
 
