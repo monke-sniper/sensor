@@ -1,0 +1,109 @@
+# Sensor on Orca — Port Plan
+
+Engineering companion to [PRD.md](./PRD.md) v2.0. The PRD says *what* Sensor is. This document says *where* each piece goes in Orca, *what* is ported from Sensor 1.0, and *how* each piece is accepted.
+
+- **Base:** [stablyai/orca](https://github.com/stablyai/orca) `main` at `94835244a2` (MIT), on branch `orca-base` of `monke-sniper/sensor`.
+- **Parts bin:** Sensor 1.0 on branch `main` of `monke-sniper/sensor` (about 13k lines of TypeScript: SolidJS renderer, Electron-free core services, Go CLI).
+
+## 1. Decision log
+
+| # | Decision | Alternatives considered | Status |
+|---|---|---|---|
+| D1 | Sensor is a fork of Orca. Sensor features are native Orca modules. | (a) Separate app bridging to Orca's CLI, as Sensor 1.0 did: rejected, because it duplicated Orca at lower quality. (b) Orca plugins only: rejected for now, because plugin host API 1.0 exposes only 12 methods (workspace context, terminal send, notifications, storage, secrets, settings), with no browser, filesystem, clipboard or native-window access. | Decided |
+| D2 | Work happens on branch `orca-base` in `monke-sniper/sensor`, created from Orca `main` with Orca's history, so upstream merges stay possible. Sensor 1.0 stays on `main` for reference. | A fresh GitHub fork of `stablyai/orca` (easier upstream sync, separate repo). Local-only work. | Decided |
+| D3 | Toolchain is Orca's: Node 24, pnpm 12.14. On the user's machine Node 24 is a portable install at `C:\Users\idkch\sensor-tools\node24`; the system Node 22 is unchanged. | Replace the system Node; install a version manager. | Decided |
+| D4 | Location of Sensor code in Orca's tree. Proposed: `src/main/sensor/<subsystem>/`, `src/shared/sensor/`, `src/renderer/src/sensor/`, `src/cli/sensor-*`. | Spread through Orca's existing directories by domain. | Open (Phase 0) |
+| D5 | How Sensor scopes map onto Orca RPC caller identity, approvals and audit log. | A Sensor-only permission manager (rejected in principle by the PRD, §14.5). | Open (Phase 0) |
+| D6 | Non-project workspaces: folder workspaces, or a new workspace kind. | — | Open (Phase 0) |
+| D7 | CLI name: keep `orca` only, or also install a `sensor` alias. | — | Open (Phase 0) |
+| D8 | Branding scope: app id, product name, icons, data directory, update channel. Done in one isolated commit. | Full rename across the codebase (rejected: it would make upstream merges very hard). | Open (Phase 0) |
+
+## 2. Feature map
+
+Status key: **Orca** = inherited unchanged · **Extend** = build on Orca's code · **New** = add as a native module · **Drop** = Sensor 1.0 code discarded.
+
+| Feature (PRD §) | Orca today | Action | Port from Sensor 1.0 (`main`) | Target in Orca (proposed) | RPC / CLI | Acceptance |
+|---|---|---|---|---|---|---|
+| App shell, panes, tabs, pop-outs (§3) | Yes | Orca | `renderer/*`, `core/layout.ts`, `workspaces.ts` → **Drop** | — | — | Orca tests pass on Windows |
+| Sensor theme (§3.1) | Theme tokens, plugin themes | Extend | — | theme via `main.css` tokens or a bundled theme plugin | — | Design-system lint passes; screenshot fixtures |
+| Status bar (§12.1) | Memory collectors, agent status | Extend | `StatusBar.tsx` (logic only) | `src/renderer/src/sensor/status-bar/` | `sensor.status` | Shows RAM, CPU, downloads and macro activity; adds no measurable idle CPU |
+| Command palette (§12.2) | `WorktreeJumpPalette` | Extend | — | palette source registration | — | Sensor commands and search results appear in Orca's palette |
+| Notifications (§12.4) | Yes | Orca + event types | — | — | — | Macro failure and download notifications appear |
+| Terminals, git, worktrees, agents, usage, skills (§11) | Yes | Orca | `dev.ts`, `terminals.ts`, Go CLI Orca bridge → **Drop** | — | — | — |
+| Tasks, handoffs, decisions (§11.3–11.4) | Partial (check) | Extend only where missing | `dev.ts` (task model only) | extends Orca task state | — | Decided after Phase 0 audit |
+| CLI + local API (§14) | `orca` CLI, runtime RPC | Extend | `core/commands.ts`, `api/server.ts`, `cli/*.go` → **Drop** | `src/shared/rpc-contract/sensor-*`, `src/main/runtime/rpc/methods/sensor-*`, `src/cli/sensor-*` handler groups | every row below | `orca <group> <verb>` works for every Sensor group |
+| Scopes and permissions (§14.5) | RPC auth, plugin capabilities, audit log | Extend | `core/permissions.ts` (scope list and rules) | `src/main/sensor/permissions/` | — | A CLI token without `files:delete` is refused; a prompt appears in the app |
+| Universal search (§8.1) | Palette, ripgrep, session search | Extend | `search.ts`, `resources.ts` | `src/main/sensor/search/` (FTS5 on `node:sqlite`) | `search.query`, `search.sources` | Results from tabs, notes, files, history, bookmarks, RSS and macros, each with its source and navigation |
+| Bookmarks, history (§4.1) | No bookmarks; navigation history only | New / Extend | `browserdata.ts` | `src/main/sensor/browser-data/` hooked to Orca browser events | `bookmarks.*`, `history.*` | Visit, then find it in history search; bookmark survives restart |
+| Downloads manager (§4.1) | Download plumbing | Extend | — | renderer pane over Orca download events | `downloads.list` | List, open and show-in-folder |
+| Incognito (§4.1, §16) | In-memory partitions (verify) | Extend | `browser.ts` (incognito rules) | Orca browser | — | No history, search-index or clipboard entries from incognito |
+| Website panels (§3.3, §4.3) | Browser tabs in panes | Extend | `core/layout.ts` (panel model) | pane type "pinned site" | `panels.*` | Pinned ChatGPT panel survives restart with its profile |
+| Page recognition (§4.4) | — | New | `knowledge-extras.ts` (`recognize`), `preload/web.ts` | `src/main/sensor/recognition/` via Orca page-script injection | `page.recognize` | YouTube, GitHub, article, PDF and AI-chat fixtures are recognized deterministically |
+| Obsidian vault notes and captures (§5) | — | New | `notes.ts`, `resources.ts` | `src/main/sensor/notes/` | `notes.*` | Capture page / selection / YouTube timestamp → markdown in vault with source link; backlinks |
+| Obsidian docking (§5.1) | — | New (Windows) | `main/obsidian.ts` | `src/main/sensor/obsidian/` + pane type | `obsidian.*` | Windows: Obsidian window re-parented into a pane; elsewhere: opens alongside |
+| Obsidian bridge plugin (§5) | — | New | `obsidian-plugin/sensor-bridge` | `resources/sensor/obsidian-plugin/` | — | Plugin test against the real RPC (ported `obsidian-bridge.test.ts`) |
+| Highlights and sticky notes (§5.4) | Transient annotate overlay | Extend | `knowledge-extras.ts` (`annotationsModule`) | `src/main/sensor/annotations/` + Orca `browser-pane/annotate/` | `annotations.*` | Highlight re-attaches after reload and restart; links to a note |
+| File tools (§6) | Workspace file RPC, watch, ripgrep | Extend | `files.ts`, `file-index.ts`, `indexer-worker.ts` | `src/main/sensor/files/` | `files.*` | Batch rename, duplicates, tags and zip work outside workspaces; indexing in a worker thread |
+| PDF toolkit and conversions (§7) | — | New | `documents.ts` | `src/main/sensor/documents/` | `docs.*` | Merge, split, rotate, extract; page → PDF; PNG → WebP; ffmpeg and pandoc offered only when found |
+| Clipboard history (§8.2) | Image paste and upload only | New | `knowledge-extras.ts` (`ClipboardStore`) + watcher in `main/main.ts` | `src/main/sensor/clipboard/` | `clipboard.*` | Text, URL and image entries; password-manager copies skipped (Windows) |
+| RSS and research (§13) | — | New | `rss.ts` | `src/main/sensor/rss/` | `rss.*` | Subscribe, discover, unread, collections |
+| Macros (§9) | Cron agent automations; browser automation bridge | New engine, Extend scheduler | `macro-lang.ts`, `macros.ts`, recorder in `preload/web.ts` | `src/main/sensor/macros/`; browser steps through `agent-browser-bridge`; schedules through Orca cron | `macros.*` | Record open, type and click; replay with inputs; scheduled run; ported `workflows.test.ts` passes |
+| AI-website workflows (§10) | — | New | `ai.ts` | `src/main/sensor/ai-sites/` on Orca's browser bridge | `ai.*` | Send and attach without submitting; wait and read; multi-ask; `forms:submit` gated |
+| User scripts (§14.7) | Plugin system | Extend / Drop | `scripts.ts` → reimplement as trusted-worker plugins | plugin host API with Sensor methods | — | Phase 6 |
+| Checkpoints (§15.4) | Durable file writes | New | `backup.ts` | `src/main/sensor/checkpoints/` | `checkpoints.*` | Two verified slots; interrupted write leaves the previous slot intact; staged restore |
+| Telemetry and cloud defaults (§16) | Opt-in PostHog banner; cloud features | Change defaults | — | settings defaults + build config | — | Fresh install sends no network telemetry and shows no banner |
+| Sync (§15) | Remote runtime | Later | — | — | — | Phase 6 |
+| Settings (§3.5) | Global settings | Extend | `settings.ts` (Sensor keys only) | Orca settings schema, Sensor section | — | — |
+
+## 3. Orca touch points
+
+Every Orca file that Sensor edits is listed here, with the reason. This list is reviewed at every upstream merge.
+
+| Orca file | Change | Why |
+|---|---|---|
+| `.gitignore` | Whitelist `docs/sensor/` (two lines after the `docs/**` allow-list) | Orca keeps planning docs local by ignoring `docs/**`; Sensor's PRD and port plan must be tracked |
+
+## 4. Phases and exit criteria
+
+Phase scope is defined in PRD §19. Each exit criterion below is concrete and verified on Windows 11.
+
+| Phase | Exit criteria |
+|---|---|
+| 0. Fork baseline | `pnpm install`, `pnpm tc` and `pnpm test` pass (or Windows-specific failures are documented as upstream issues). The Sensor-branded build launches. Telemetry is off by default. Baseline startup, idle RAM and tab benchmarks are recorded. D4–D8 are decided. |
+| 1. Foundation | Sensor database and migrations. Scopes enforced on one Sensor RPC method from the CLI. Search returns open tabs in the palette. Sensor pane type opens. Status bar renders. |
+| 2. Knowledge | Feature-map rows for notes, Obsidian, bridge plugin and highlights meet their acceptance tests. |
+| 3. Browser power | Rows for bookmarks, history, downloads, incognito, panels, recognition, AI sites and macros meet their acceptance tests. |
+| 4. Files and documents | Rows for file tools, documents, clipboard and RSS meet their acceptance tests. |
+| 5. Checkpoints and polish | Checkpoint row met. All Sensor subsystems benchmarked against the Phase 0 baseline. Upstream merge rehearsal recorded. |
+| 6. Advanced | Plugin host Sensor methods, visual builder, sync evaluation. |
+
+Phases 2, 3 and 4 depend only on Phase 1 and touch disjoint Sensor modules, so they can run in parallel worktrees once Phase 1 lands.
+
+## 5. Test strategy
+
+- **Unit:** Orca's Vitest setup (`pnpm test`, `config/vitest.config.ts`). Sensor 1.0's tests (`core.test.ts`, `modules.test.ts`, `workflows.test.ts`, `obsidian-bridge.test.ts`; 44 tests passing on 2026-10-31) are ported alongside their code and adapted to Orca's contracts.
+- **E2E:** Orca's Electron E2E harness with Playwright CDP and `ORCA_BACKGROUND_LAUNCH=1` (no focus stealing). Sensor 1.0's `tests/e2e/smoke.mjs` scenarios (41 passing on 2026-10-31) become the acceptance tests in the feature map.
+- **Performance:** Orca's `test:perf:*` harness, plus ported scenarios from Sensor 1.0's `scripts/bench.mjs`.
+- **Quality gates:** Orca's lint, design-system lint, ratchets and dependency security check run on Sensor code.
+
+## 6. Risk register
+
+| # | Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|---|
+| R1 | Upstream Orca moves fast (35k+ PRs) and conflicts with Sensor edits | High | High | Isolate Sensor modules (D4), keep the touch-point list short, merge upstream often, rehearse in Phase 5 |
+| R2 | Orca's toolchain or tests don't pass cleanly on this Windows machine | Medium | Medium | Phase 0 records failures before Sensor changes anything; Windows path-length issues avoided by working in `C:\Users\idkch\sensor` |
+| R3 | Orca telemetry, cloud or update defaults leak into Sensor builds | Medium | High | Phase 0 defaults plus a test that a fresh profile makes no telemetry requests |
+| R4 | Electron extension support falls short of user expectations | Medium | Medium | Published compatibility list (PRD §4.2) |
+| R5 | Win32 Obsidian re-parenting has focus, DPI or input bugs | Medium | Medium | Ported as Windows-only and degrades to "open alongside"; manual test checklist |
+| R6 | AI chat sites change their DOM | High | Medium | Per-site selector overrides in settings (ported); acceptance tests run against local fixtures |
+| R7 | Combined app is heavier than either alone | Medium | High | Lazy Sensor subsystems; per-phase benchmark deltas against the Phase 0 baseline |
+| R8 | Orca's browser bridge is agent-oriented and lacks a macro primitive | Medium | Medium | Add a narrowly scoped bridge command at a touch point rather than a parallel browser driver |
+| R9 | License obligations | Low | Medium | Keep Orca's MIT LICENSE and attribution; pick Sensor's license with that constraint |
+| R10 | Scope creep from Orca's huge surface (mobile, cloud, dozens of agents) | Medium | Medium | Inherit, don't extend, anything outside the PRD |
+
+## 7. Local environment (user's machine)
+
+- Repository: `C:\Users\idkch\sensor` (a short path is required; Orca's deep `node_modules` exceeds the Windows 260-character limit under long paths).
+- Node 24: `C:\Users\idkch\sensor-tools\node24` (official nodejs.org zip, SHA-256 verified). Prepend it to `PATH` in the shell used for Orca work.
+- pnpm 12.14.0 (already installed).
+- Go is no longer needed: the Go CLI is dropped.
